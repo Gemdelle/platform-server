@@ -1,0 +1,55 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Compiled Java class files
+*.class
+
+# Java files directory - only ignore .class files
+java_files/*.class
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Environment variable files
+.env
+
+# IDE-specific files
+.idea/
+.vscode/
+*.swp
+*~
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# Build directories
+build/
+dist/
+tmp/
+out/
+
+# System files
+*.bak
+*.old
+*.orig
+*.rej
+*.swo
+*.swp
+*.tmp
+
+# Coverage directory used by tools like istanbul
+coverage/
