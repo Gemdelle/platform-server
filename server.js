@@ -635,6 +635,79 @@ app.post('/validate/course/1/6', async (req, res) => {
     const classCode = req.body.class_code;
     const uid = req.headers.authorization.split('Bearer ')[1];
     let xpAlreadyAccredited = false;
+    let validations = [];
+    let invalidations = [];
+
+    const Validations = Object.freeze({
+        VALID_CLASS_STRUCTURE: 'VALID_CLASS_STRUCTURE',
+        VALID_ATTRIBUTE_NAME: 'VALID_ATTRIBUTE_NAME',
+        VALID_ATTRIBUTE_FAVORITE_FOOD: 'VALID_ATTRIBUTE_FAVORITE_FOOD',
+        VALID_ATTRIBUTE_BIRTH_DAY: 'VALID_ATTRIBUTE_BIRTH_DAY',
+        VALID_ATTRIBUTE_BIRTH_MONTH: 'VALID_ATTRIBUTE_BIRTH_MONTH',
+        VALID_ATTRIBUTE_BIRTH_YEAR: 'VALID_ATTRIBUTE_BIRTH_YEAR',
+        VALID_ATTRIBUTE_LEGS: 'VALID_ATTRIBUTE_LEGS',
+        VALID_ATTRIBUTE_EYES: 'VALID_ATTRIBUTE_EYES',
+        VALID_ATTRIBUTE_ANTENNAE: 'VALID_ATTRIBUTE_ANTENNAE',
+        VALID_ATTRIBUTE_WEIGHT: 'VALID_ATTRIBUTE_WEIGHT',
+        VALID_ATTRIBUTE_HEIGHT: 'VALID_ATTRIBUTE_HEIGHT'
+    });
+
+    const Invalidations = Object.freeze({
+        INVALID_CLASS_STRUCTURE: 'INVALID_CLASS_STRUCTURE',
+        INVALID_ATTRIBUTE_NAME: 'INVALID_ATTRIBUTE_NAME',
+        INVALID_ATTRIBUTE_FAVORITE_FOOD: 'INVALID_ATTRIBUTE_FAVORITE_FOOD',
+        INVALID_ATTRIBUTE_BIRTH_DAY: 'INVALID_ATTRIBUTE_BIRTH_DAY',
+        INVALID_ATTRIBUTE_BIRTH_MONTH: 'INVALID_ATTRIBUTE_BIRTH_MONTH',
+        INVALID_ATTRIBUTE_BIRTH_YEAR: 'INVALID_ATTRIBUTE_BIRTH_YEAR',
+        INVALID_ATTRIBUTE_LEGS: 'INVALID_ATTRIBUTE_LEGS',
+        INVALID_ATTRIBUTE_EYES: 'INVALID_ATTRIBUTE_EYES',
+        INVALID_ATTRIBUTE_ANTENNAE: 'INVALID_ATTRIBUTE_ANTENNAE',
+        INVALID_ATTRIBUTE_WEIGHT: 'INVALID_ATTRIBUTE_WEIGHT',
+        INVALID_ATTRIBUTE_HEIGHT: 'INVALID_ATTRIBUTE_HEIGHT'
+    });
+
+    const attributeValidationMap = {
+        'private String name;': {
+            valid: Validations.VALID_ATTRIBUTE_NAME,
+            invalid: Invalidations.INVALID_ATTRIBUTE_NAME
+        },
+        'private String favoriteFood;': {
+            valid: Validations.VALID_ATTRIBUTE_FAVORITE_FOOD,
+            invalid: Invalidations.INVALID_ATTRIBUTE_FAVORITE_FOOD
+        },
+        'private int birthDay;': {
+            valid: Validations.VALID_ATTRIBUTE_BIRTH_DAY,
+            invalid: Invalidations.INVALID_ATTRIBUTE_BIRTH_DAY
+        },
+        'private int birthMonth;': {
+            valid: Validations.VALID_ATTRIBUTE_BIRTH_MONTH,
+            invalid: Invalidations.INVALID_ATTRIBUTE_BIRTH_MONTH
+        },
+        'private int birthYear;': {
+            valid: Validations.VALID_ATTRIBUTE_BIRTH_YEAR,
+            invalid: Invalidations.INVALID_ATTRIBUTE_BIRTH_YEAR
+        },
+        'private int legs;': {
+            valid: Validations.VALID_ATTRIBUTE_LEGS,
+            invalid: Invalidations.INVALID_ATTRIBUTE_LEGS
+        },
+        'private int eyes;': {
+            valid: Validations.VALID_ATTRIBUTE_EYES,
+            invalid: Invalidations.INVALID_ATTRIBUTE_EYES
+        },
+        'private int antennae;': {
+            valid: Validations.VALID_ATTRIBUTE_ANTENNAE,
+            invalid: Invalidations.INVALID_ATTRIBUTE_ANTENNAE
+        },
+        'private double weight;': {
+            valid: Validations.VALID_ATTRIBUTE_WEIGHT,
+            invalid: Invalidations.INVALID_ATTRIBUTE_WEIGHT
+        },
+        'private double height;': {
+            valid: Validations.VALID_ATTRIBUTE_HEIGHT,
+            invalid: Invalidations.INVALID_ATTRIBUTE_HEIGHT
+        }
+    };
 
     function resolveNextLevel(userProfile) {
         let nextXP = userProfile.profile.current_xp + 20;
@@ -644,32 +717,29 @@ app.post('/validate/course/1/6', async (req, res) => {
     try {
         let userProfile = await getUserProfileFromDatabase(uid);
 
-        const requiredAttributes = [
-            'private String name;',
-            'private String favoriteFood;',
-            'private int birthDay;',
-            'private int birthMonth;',
-            'private int birthYear;',
-            'private int legs;',
-            'private int eyes;',
-            'private int antennae;',
-            'private double weight;',
-            'private double height;'
-        ];
-
-        const classHeader = 'public class Terrestrial {';
-
-        // Check if the class starts with the correct header and ends with a closing brace
-        if (!classCode.startsWith(classHeader) || !classCode.trim().endsWith('}')) {
-            res.json({error: 'The class does not meet the required structure.'});
-            return;
+        // Validate specific class declaration
+        if (!classCode.includes('public class Terrestrial {')) {
+            invalidations.push(Invalidations.INVALID_CLASS_STRUCTURE);
+        } else {
+            validations.push(Validations.VALID_CLASS_STRUCTURE);
         }
 
-        // Check if all required attributes are present in the classCode
-        const allAttributesPresent = requiredAttributes.every(attr => classCode.includes(attr));
+        // Validate each required attribute
+        Object.keys(attributeValidationMap).forEach(attr => {
+            if (classCode.includes(attr)) {
+                validations.push(attributeValidationMap[attr].valid);
+            } else {
+                invalidations.push(attributeValidationMap[attr].invalid);
+            }
+        });
 
-        if (!allAttributesPresent) {
-            res.json({error: 'The class does not meet the required structure.'});
+        if (invalidations.length > 0) {
+            res.json({
+                error: 'The class does not meet the required structure.',
+                userProfile,
+                validations,
+                invalidations
+            });
             return;
         }
 
@@ -705,14 +775,16 @@ app.post('/validate/course/1/6', async (req, res) => {
         const userRef = db.collection('users').doc(uid);
         await userRef.set(userProfile);
 
-        res.json(userProfile);
+        res.json({
+            userProfile,
+            validations,
+            invalidations
+        });
     } catch (error) {
         console.error('Error verifying token or validating course 1 sublevel 6:', error);
         res.status(401).send('Unauthorized');
     }
 });
-
-
 
 app.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
