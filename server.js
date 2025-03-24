@@ -253,6 +253,76 @@ app.post('/validate/course/2/theoretical', async (req, res) => {
     }
 });
 
+app.post('/validate/course-python/3/theoretical', async (req, res) => {
+    const theoretical = req.body.theoretical;
+    const uid = req.headers.authorization.split('Bearer ')[1];
+    let xpAlreadyAccredited = false
+
+    function resolveTheoreticalGradeFromScore(currentScore) {
+        return currentScore >= 15 ? TheoreticalGrades.GOLD :
+            currentScore >= 12 ? TheoreticalGrades.SILVER :
+                TheoreticalGrades.NONE;
+    }
+
+    function resolveNextLevel(userProfile) {
+        let nextXP = userProfile.profile.current_xp + 20;
+        return getLevelsExperience()[userProfile.profile.level] === nextXP ? userProfile.profile.level + 1 : userProfile.profile.level;
+    }
+
+    try {
+        let userProfile = await getUserProfileFromDatabase(uid);
+
+        const [firstCourse,secondCourse, ...otherCourses] = userProfile.progress.courses_python;
+        let scoreDifferenceBetweenScores = theoretical.score.current - secondCourse.theoretical.score.current;
+        let currentScore = scoreDifferenceBetweenScores > 0 ? secondCourse.theoretical.score.current + scoreDifferenceBetweenScores : secondCourse.theoretical.score.current;
+
+        if (currentScore === secondCourse.theoretical.score.current) {
+            res.json(userProfile);
+            return
+        }
+
+        if (secondCourse.theoretical.grade !== TheoreticalGrades.NONE) {
+            xpAlreadyAccredited = true
+        }
+
+        const updatedSecondCourse = {
+            ...secondCourse,
+            current: currentScore >= 12 && secondCourse.current === 0 ? secondCourse.current + 1 : secondCourse.current,
+            theoretical: {
+                grade: resolveTheoreticalGradeFromScore(currentScore),
+                score: {
+                    current: currentScore,
+                    total: theoretical.score.total
+                }
+            }
+        };
+
+        userProfile = {
+            ...userProfile,
+            profile: {
+                ...userProfile.profile,
+                level:  xpAlreadyAccredited ? userProfile.profile.level: resolveNextLevel(userProfile),
+                current_xp: xpAlreadyAccredited ? userProfile.profile.current_xp : userProfile.profile.current_xp + 20,
+            },
+            progress: {
+                ...userProfile.progress,
+                courses_python: [firstCourse, updatedSecondCourse, ...otherCourses]
+            }
+        };
+
+        userProfile.progress.courses_python = mergeCoursesWithProgress(getGlobalPythonCourses(), userProfile.progress.courses_python);
+        userProfile.profile.total_xp = getLevelsExperience()[userProfile.profile.level];
+
+        const userRef = db.collection('users').doc(uid);
+        await userRef.set(userProfile);
+
+        res.json(userProfile);
+    } catch (error) {
+        console.error('Error verifying token or validating course 2 sublevel 1:', error);
+        res.status(401).send('Unauthorized');
+    }
+});
+
 app.post('/validate/course/1/1', async (req, res) => {
     const classCode = req.body.class_code;
     const uid = req.headers.authorization.split('Bearer ')[1];
