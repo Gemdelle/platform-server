@@ -1,11 +1,17 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const {exec} = require('child_process');
-const fs = require('fs');
 const cors = require('cors');
 const admin = require('firebase-admin');
-const path = require('path');
 const {db} = require('./firebaseConfig');
+const validateCoursePython1Routes = require('./routes/validateCoursePython1');
+const validateCoursePython2Routes = require('./routes/validateCoursePython2');
+const validateCoursePython3Routes = require('./routes/validateCoursePython3');
+const validateCoursePython4Routes = require('./routes/validateCoursePython4');
+const validateCoursePython8Routes = require('./routes/validateCoursePython8');
+const {getUserProfileFromDatabase,
+    mergeCoursesWithProgress, fetchCoursesData, getGlobalJavaCourses, getGlobalPythonCourses, getCoursesAvailability,
+    getLevelsExperience, createPythonCourses7and8
+} = require("./utils/userHelpers");
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -13,28 +19,15 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(bodyParser.json());
 
-let globalCoursesData = [];
-let levelsExperience = {
-    1: 150,
-    2: 500
-}
-
-
-async function fetchCoursesData() {
-    try {
-        const coursesSnapshot = await db.collection('courses').get();
-        globalCoursesData = coursesSnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-    } catch (error) {
-        console.error('Error fetching courses data:', error);
-    }
-}
-
 fetchCoursesData();
-
 setInterval(fetchCoursesData, 1000 * 60 * 60);
+
+// Rutas
+app.use('/validate/course-python/1', validateCoursePython1Routes);
+app.use('/validate/course-python/2', validateCoursePython2Routes);
+app.use('/validate/course-python/3', validateCoursePython3Routes);
+app.use('/validate/course-python/4', validateCoursePython4Routes);
+app.use('/validate/course-python/8', validateCoursePython8Routes);
 
 app.get('/profile', async (req, res) => {
     const idToken = req.headers.authorization.split('Bearer ')[1];
@@ -49,11 +42,42 @@ app.get('/profile', async (req, res) => {
             userProfile = await createNewUserProfile(uid, decodedToken.email);
         }
 
-        userProfile.progress.courses = mergeCoursesWithProgress(globalCoursesData, userProfile.progress.courses);
+        if(userProfile.profile.current_course === "java") {
+            userProfile.progress.courses = mergeCoursesWithProgress(getGlobalJavaCourses(), userProfile.progress.courses);
+        } else if(userProfile.profile.current_course === "python") {
+            userProfile.progress.courses_python = mergeCoursesWithProgress(getGlobalPythonCourses(), userProfile.progress.courses_python);
+        }
 
         res.json(userProfile);
     } catch (error) {
         console.error('Error verifying token or fetching profile:', error);
+        res.status(401).send('Unauthorized');
+    }
+});
+
+app.post('/profile/current-course', async (req, res) => {
+    const currentCourse = req.body["current_course"];
+    const uid = req.headers.authorization.split('Bearer ')[1];
+
+    if(getCoursesAvailability()[currentCourse] == null || !getCoursesAvailability()[currentCourse]){
+        console.error('Invalid Course');
+        res.status(400).send('Invalid Course');
+    }
+
+    try {
+        let userProfile = await getUserProfileFromDatabase(uid);
+
+        if (!userProfile) {
+            userProfile = await createNewUserProfile(uid, userProfile.email);
+        }
+
+        userProfile.profile["current_course"] = currentCourse;
+        const userRef = db.collection('users').doc(uid);
+        await userRef.set(userProfile);
+
+        res.json(userProfile);
+    } catch (error) {
+        console.error('Error Assigning Current Course:', error);
         res.status(401).send('Unauthorized');
     }
 });
@@ -73,7 +97,11 @@ app.put('/select-pet', async (req, res) => {
             }
         }
 
-        userProfile.progress.courses = mergeCoursesWithProgress(globalCoursesData, userProfile.progress.courses);
+        if(userProfile.profile.current_course === "java") {
+            userProfile.progress.courses = mergeCoursesWithProgress(getGlobalJavaCourses(), userProfile.progress.courses);
+        } else if(userProfile.profile.current_course === "python") {
+            userProfile.progress.courses_python = mergeCoursesWithProgress(getGlobalPythonCourses(), userProfile.progress.courses_python);
+        }
 
         const userRef = db.collection('users').doc(uid);
         await userRef.set(userProfile);
@@ -98,7 +126,7 @@ app.post('/validate/course/1/theoretical', async (req, res) => {
 
     function resolveNextLevel(userProfile) {
         let nextXP = userProfile.profile.current_xp + 50;
-        return levelsExperience[userProfile.profile.level] === nextXP ? userProfile.profile.level + 1 : userProfile.profile.level;
+        return getLevelsExperience()[userProfile.profile.level] === nextXP ? userProfile.profile.level + 1 : userProfile.profile.level;
     }
 
     try {
@@ -142,8 +170,8 @@ app.post('/validate/course/1/theoretical', async (req, res) => {
             }
         };
 
-        userProfile.progress.courses = mergeCoursesWithProgress(globalCoursesData, userProfile.progress.courses);
-        userProfile.profile.total_xp = levelsExperience[userProfile.profile.level];
+        userProfile.progress.courses = mergeCoursesWithProgress(getGlobalJavaCourses(), userProfile.progress.courses);
+        userProfile.profile.total_xp = getLevelsExperience()[userProfile.profile.level];
 
         const userRef = db.collection('users').doc(uid);
         await userRef.set(userProfile);
@@ -241,7 +269,7 @@ app.post('/validate/course/1/1', async (req, res) => {
     });
     function resolveNextLevel(userProfile) {
         let nextXP = userProfile.profile.current_xp + 20;
-        return levelsExperience[userProfile.profile.level] <= nextXP ? userProfile.profile.level + 1 : userProfile.profile.level;
+        return getLevelsExperience()[userProfile.profile.level] <= nextXP ? userProfile.profile.level + 1 : userProfile.profile.level;
     }
 
     try {
@@ -290,8 +318,8 @@ app.post('/validate/course/1/1', async (req, res) => {
             }
         };
 
-        userProfile.progress.courses = mergeCoursesWithProgress(globalCoursesData, userProfile.progress.courses);
-        userProfile.profile.total_xp = levelsExperience[userProfile.profile.level];
+        userProfile.progress.courses = mergeCoursesWithProgress(getGlobalJavaCourses(), userProfile.progress.courses);
+        userProfile.profile.total_xp = getLevelsExperience()[userProfile.profile.level];
 
         const userRef = db.collection('users').doc(uid);
         await userRef.set(userProfile);
@@ -328,7 +356,7 @@ app.post('/validate/course/1/2', async (req, res) => {
 
     function resolveNextLevel(userProfile) {
         let nextXP = userProfile.profile.current_xp + 20;
-        return levelsExperience[userProfile.profile.level] <= nextXP ? userProfile.profile.level + 1 : userProfile.profile.level;
+        return getLevelsExperience()[userProfile.profile.level] <= nextXP ? userProfile.profile.level + 1 : userProfile.profile.level;
     }
 
     try {
@@ -383,8 +411,8 @@ app.post('/validate/course/1/2', async (req, res) => {
             }
         };
 
-        userProfile.progress.courses = mergeCoursesWithProgress(globalCoursesData, userProfile.progress.courses);
-        userProfile.profile.total_xp = levelsExperience[userProfile.profile.level];
+        userProfile.progress.courses = mergeCoursesWithProgress(getGlobalJavaCourses(), userProfile.progress.courses);
+        userProfile.profile.total_xp = getLevelsExperience()[userProfile.profile.level];
 
         const userRef = db.collection('users').doc(uid);
         await userRef.set(userProfile);
@@ -429,7 +457,7 @@ app.post('/validate/course/1/3', async (req, res) => {
 
     function resolveNextLevel(userProfile) {
         let nextXP = userProfile.profile.current_xp + 60;
-        return levelsExperience[userProfile.profile.level] <= nextXP ? userProfile.profile.level + 1 : userProfile.profile.level;
+        return getLevelsExperience()[userProfile.profile.level] <= nextXP ? userProfile.profile.level + 1 : userProfile.profile.level;
     }
 
     try {
@@ -509,8 +537,8 @@ app.post('/validate/course/1/3', async (req, res) => {
             }
         };
 
-        userProfile.progress.courses = mergeCoursesWithProgress(globalCoursesData, userProfile.progress.courses);
-        userProfile.profile.total_xp = levelsExperience[userProfile.profile.level];
+        userProfile.progress.courses = mergeCoursesWithProgress(getGlobalJavaCourses(), userProfile.progress.courses);
+        userProfile.profile.total_xp = getLevelsExperience()[userProfile.profile.level];
 
         const userRef = db.collection('users').doc(uid);
         await userRef.set(userProfile);
@@ -544,7 +572,7 @@ app.post('/validate/course/1/4', async (req, res) => {
 
     function resolveNextLevel(userProfile) {
         let nextXP = userProfile.profile.current_xp + 20;
-        return levelsExperience[userProfile.profile.level] <= nextXP ? userProfile.profile.level + 1 : userProfile.profile.level;
+        return getLevelsExperience()[userProfile.profile.level] <= nextXP ? userProfile.profile.level + 1 : userProfile.profile.level;
     }
 
     try {
@@ -593,8 +621,8 @@ app.post('/validate/course/1/4', async (req, res) => {
             }
         };
 
-        userProfile.progress.courses = mergeCoursesWithProgress(globalCoursesData, userProfile.progress.courses);
-        userProfile.profile.total_xp = levelsExperience[userProfile.profile.level];
+        userProfile.progress.courses = mergeCoursesWithProgress(getGlobalJavaCourses(), userProfile.progress.courses);
+        userProfile.profile.total_xp = getLevelsExperience()[userProfile.profile.level];
 
         const userRef = db.collection('users').doc(uid);
         await userRef.set(userProfile);
@@ -629,7 +657,7 @@ app.post('/validate/course/1/5', async (req, res) => {
 
     function resolveNextLevel(userProfile) {
         let nextXP = userProfile.profile.current_xp + 20;
-        return levelsExperience[userProfile.profile.level] <= nextXP ? userProfile.profile.level + 1 : userProfile.profile.level;
+        return getLevelsExperience()[userProfile.profile.level] <= nextXP ? userProfile.profile.level + 1 : userProfile.profile.level;
     }
 
     try {
@@ -684,8 +712,8 @@ app.post('/validate/course/1/5', async (req, res) => {
             }
         };
 
-        userProfile.progress.courses = mergeCoursesWithProgress(globalCoursesData, userProfile.progress.courses);
-        userProfile.profile.total_xp = levelsExperience[userProfile.profile.level];
+        userProfile.progress.courses = mergeCoursesWithProgress(getGlobalJavaCourses(), userProfile.progress.courses);
+        userProfile.profile.total_xp = getLevelsExperience()[userProfile.profile.level];
 
         const userRef = db.collection('users').doc(uid);
         await userRef.set(userProfile);
@@ -781,7 +809,7 @@ app.post('/validate/course/1/6', async (req, res) => {
 
     function resolveNextLevel(userProfile) {
         let nextXP = userProfile.profile.current_xp + 20;
-        return levelsExperience[userProfile.profile.level] <= nextXP ? userProfile.profile.level + 1 : userProfile.profile.level;
+        return getLevelsExperience()[userProfile.profile.level] <= nextXP ? userProfile.profile.level + 1 : userProfile.profile.level;
     }
 
     try {
@@ -839,8 +867,8 @@ app.post('/validate/course/1/6', async (req, res) => {
             }
         };
 
-        userProfile.progress.courses = mergeCoursesWithProgress(globalCoursesData, userProfile.progress.courses);
-        userProfile.profile.total_xp = levelsExperience[userProfile.profile.level];
+        userProfile.progress.courses = mergeCoursesWithProgress(getGlobalJavaCourses(), userProfile.progress.courses);
+        userProfile.profile.total_xp = getLevelsExperience()[userProfile.profile.level];
 
         const userRef = db.collection('users').doc(uid);
         await userRef.set(userProfile);
@@ -856,30 +884,181 @@ app.post('/validate/course/1/6', async (req, res) => {
     }
 });
 
+/*
+
+app.post('/validate/course-python/1/1', async (req, res) => {
+    const classCode = req.body.class_code;
+    const uid = req.headers.authorization.split('Bearer ')[1];
+    let xpAlreadyAccredited = false;
+    let validations = [];
+    let invalidations = [];
+
+    const Validations = Object.freeze({
+        VALID_VARIABLE_DECLARATION: 'VALID_VARIABLE_DECLARATION'
+    });
+
+    const Invalidations = Object.freeze({
+        INVALID_VARIABLE_DECLARATION: 'INVALID_VARIABLE_DECLARATION'
+    });
+    function resolveNextLevel(userProfile) {
+        let nextXP = userProfile.profile.current_xp + 20;
+        return getLevelsExperience()[userProfile.profile.level] <= nextXP ? userProfile.profile.level + 1 : userProfile.profile.level;
+    }
+
+    try {
+        let userProfile = await getUserProfileFromDatabase(uid);
+
+        const validateClassCode = (code) => {
+            return code.includes('quote = "La materia no se crea ni se destruye, solo se transforma."');
+        };
+
+        if (!validateClassCode(classCode)) {
+            invalidations.push(Invalidations.INVALID_VARIABLE_DECLARATION);
+            res.json({
+                error: 'The code dont match with the variable declaration',
+                userProfile,
+                validations,
+                invalidations
+            });
+            return;
+        }
+
+        validations.push(Validations.VALID_VARIABLE_DECLARATION);
+
+        const [firstCourse, ...otherCourses] = userProfile.progress.courses_python;
+        let subLevelAlreadyDone = firstCourse.completed_sub_levels.find((sublevelNumber) => {
+            return 1 === sublevelNumber;
+        }) !== undefined;
+        if (subLevelAlreadyDone) {
+            xpAlreadyAccredited = true;
+        }
+        const updatedFirstCourse = {
+            ...firstCourse,
+            current: firstCourse.current + 1,
+            completed_sub_levels: subLevelAlreadyDone ? firstCourse.completed_sub_levels : [...firstCourse.completed_sub_levels, 1]
+        };
+
+        userProfile = {
+            ...userProfile,
+            profile: {
+                ...userProfile.profile,
+                level: xpAlreadyAccredited ? userProfile.profile.level : resolveNextLevel(userProfile),
+                current_xp: xpAlreadyAccredited ? userProfile.profile.current_xp : userProfile.profile.current_xp + 20
+            },
+            progress: {
+                ...userProfile.progress,
+                courses_python: [updatedFirstCourse, ...otherCourses]
+            }
+        };
+
+        userProfile.progress.courses_python = mergeCoursesWithProgress(getGlobalPythonCourses(), userProfile.progress.courses_python);
+        userProfile.profile.total_xp = getLevelsExperience()[userProfile.profile.level];
+
+        const userRef = db.collection('users').doc(uid);
+        await userRef.set(userProfile);
+
+        res.json({
+            userProfile,
+            validations,
+            invalidations
+        });
+    } catch (error) {
+        console.error('Error verifying token or validating python course 1 sublevel 1:', error);
+        res.status(401).send('Unauthorized');
+    }
+});
+
+app.post('/validate/course-python/1/2', async (req, res) => {
+    const classCode = req.body.class_code;
+    const uid = req.headers.authorization.split('Bearer ')[1];
+    let xpAlreadyAccredited = false;
+    let validations = [];
+    let invalidations = [];
+
+    const Validations = Object.freeze({
+        VALID_VARIABLE_DECLARATION: 'VALID_VARIABLE_DECLARATION'
+    });
+
+    const Invalidations = Object.freeze({
+        INVALID_VARIABLE_DECLARATION: 'INVALID_VARIABLE_DECLARATION'
+    });
+    function resolveNextLevel(userProfile) {
+        let nextXP = userProfile.profile.current_xp + 20;
+        return getLevelsExperience()[userProfile.profile.level] <= nextXP ? userProfile.profile.level + 1 : userProfile.profile.level;
+    }
+
+    try {
+        let userProfile = await getUserProfileFromDatabase(uid);
+
+        const validateClassCode = (code) => {
+            return code.includes('quote = "Nada se pierde, todo se transforma." # Antoine Lavoisier');
+        };
+
+        if (!validateClassCode(classCode)) {
+            invalidations.push(Invalidations.INVALID_VARIABLE_DECLARATION);
+            res.json({
+                error: 'The code dont match with the variable declaration',
+                userProfile,
+                validations,
+                invalidations
+            });
+            return;
+        }
+
+        validations.push(Validations.VALID_VARIABLE_DECLARATION);
+
+        const [firstCourse, ...otherCourses] = userProfile.progress.courses_python;
+        let subLevelAlreadyDone = firstCourse.completed_sub_levels.find((sublevelNumber) => {
+            return 1 === sublevelNumber;
+        }) !== undefined;
+        if (subLevelAlreadyDone) {
+            xpAlreadyAccredited = true;
+        }
+        const updatedFirstCourse = {
+            ...firstCourse,
+            current: firstCourse.current + 1,
+            completed_sub_levels: subLevelAlreadyDone ? firstCourse.completed_sub_levels : [...firstCourse.completed_sub_levels, 1]
+        };
+
+        userProfile = {
+            ...userProfile,
+            profile: {
+                ...userProfile.profile,
+                level: xpAlreadyAccredited ? userProfile.profile.level : resolveNextLevel(userProfile),
+                current_xp: xpAlreadyAccredited ? userProfile.profile.current_xp : userProfile.profile.current_xp + 20
+            },
+            progress: {
+                ...userProfile.progress,
+                courses_python: [updatedFirstCourse, ...otherCourses]
+            }
+        };
+
+        userProfile.progress.courses_python = mergeCoursesWithProgress(getGlobalPythonCourses(), userProfile.progress.courses_python);
+        userProfile.profile.total_xp = getLevelsExperience()[userProfile.profile.level];
+
+        const userRef = db.collection('users').doc(uid);
+        await userRef.set(userProfile);
+
+        res.json({
+            userProfile,
+            validations,
+            invalidations
+        });
+    } catch (error) {
+        console.error('Error verifying token or validating python course 1 sublevel 2:', error);
+        res.status(401).send('Unauthorized');
+    }
+});
+
+*/
+
 app.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
 });
 
 
-async function getUserProfileFromDatabase(uid) {
-    const userRef = db.collection('users').doc(uid);
-    const doc = await userRef.get();
-
-    if (!doc.exists) {
-        return null;
-    }
-
-    return doc.data();
-}
 
 const TheoreticalGrades = Object.freeze({
-    NONE: 'NONE',
-    BRONZE: 'BRONZE',
-    SILVER: 'SILVER',
-    GOLD: 'GOLD'
-});
-
-const SubLevelsGrades = Object.freeze({
     NONE: 'NONE',
     BRONZE: 'BRONZE',
     SILVER: 'SILVER',
@@ -895,7 +1074,8 @@ async function createNewUserProfile(uid, email) {
             level: 1,
             current_xp: 0,
             total_xp: 150,
-            badges: []
+            badges: [],
+            current_course:""
         },
         progress: {
             goals: [
@@ -912,7 +1092,19 @@ async function createNewUserProfile(uid, email) {
                     description: "Conocer conceptos de clase, instancia y tipos de atributos.",
                 }
             ],
-            courses: globalCoursesData.map(course => ({
+            courses: getGlobalJavaCourses().map(course => ({
+                id: course.id,
+                current: 1,
+                completed_sub_levels: [],
+                theoretical: {
+                    grade: TheoreticalGrades.NONE,
+                    score: {
+                        current: 0,
+                        total: 0
+                    }
+                }
+            })),
+            courses_python: getGlobalPythonCourses().map(course => ({
                 id: course.id,
                 current: 1,
                 completed_sub_levels: [],
@@ -933,14 +1125,4 @@ async function createNewUserProfile(uid, email) {
     return newUserProfile;
 }
 
-function mergeCoursesWithProgress(globalCourses, userProgress) {
-    return globalCourses.map(course => {
-        const userCourse = userProgress.find(c => c.id === course.id) || {id: course.id, current: 1};
-        return {
-            ...course,
-            current: userCourse.current,
-            completed_sub_levels: userCourse.completed_sub_levels,
-            theoretical: userCourse.theoretical
-        };
-    });
-}
+
