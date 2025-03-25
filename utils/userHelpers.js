@@ -33,15 +33,15 @@ async function fetchCoursesData() {
     try {
         const coursesJavaSnapshot = await db.collection('courses').get();
         globalJavaCoursesData = coursesJavaSnapshot.docs.map(doc => ({
-            id: doc.id,
+            id: Number(doc.id),
             ...doc.data()
-        }));
+        })).sort((a, b) => a.id - b.id);
 
         const coursesPythonSnapshot = await db.collection('courses_python').get();
         globalPythonCoursesData = coursesPythonSnapshot.docs.map(doc => ({
-            id: doc.id,
+            id: Number(doc.id),
             ...doc.data()
-        }));
+        })).sort((a, b) => a.id - b.id);
 
     } catch (error) {
         console.error('Error fetching courses data:', error);
