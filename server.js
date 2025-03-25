@@ -7,6 +7,7 @@ const validateCoursePython1Routes = require('./routes/validateCoursePython1');
 const validateCoursePython2Routes = require('./routes/validateCoursePython2');
 const validateCoursePython3Routes = require('./routes/validateCoursePython3');
 const validateCoursePython4Routes = require('./routes/validateCoursePython4');
+const validateCoursePython6Routes = require('./routes/validateCoursePython6');
 const validateCoursePython8Routes = require('./routes/validateCoursePython8');
 const {getUserProfileFromDatabase,
     mergeCoursesWithProgress, fetchCoursesData, getGlobalJavaCourses, getGlobalPythonCourses, getCoursesAvailability,
@@ -27,6 +28,7 @@ app.use('/validate/course-python/1', validateCoursePython1Routes);
 app.use('/validate/course-python/2', validateCoursePython2Routes);
 app.use('/validate/course-python/3', validateCoursePython3Routes);
 app.use('/validate/course-python/4', validateCoursePython4Routes);
+app.use('/validate/course-python/6', validateCoursePython6Routes);
 app.use('/validate/course-python/8', validateCoursePython8Routes);
 
 app.get('/profile', async (req, res) => {
